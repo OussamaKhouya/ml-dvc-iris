@@ -50,6 +50,12 @@ jobs:
         run: |
           dvc pull -v
 
+      - name: Ensure raw dataset is present
+        run: |
+          if [ ! -f data/iris.csv ]; then
+            python scripts/download_iris.py
+          fi
+
       - name: Run pipeline (prepare → train → evaluate)
         run: |
           dvc repro
