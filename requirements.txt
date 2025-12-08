@@ -1,6 +1,6 @@
 pandas
 scikit-learn
-pyyaml
+pyyaml==6.0.2
 joblib
 dvc[gdrive]==3.63.0
 cml
