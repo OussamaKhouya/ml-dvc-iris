@@ -1,7 +1,10 @@
 venv
-/models
-/data
+/models/**
+!/models/**/*.dvc
+/data/**
+!/data/**/*.dvc
 .dvc/gdrive-creds.json
 .dvc/config.local
 gdrive_user_credentials.json
 config.local
+pdf Report/tp2-mlops-full-intergration-Oussama_Khouya-Radwane_khemisse.tex

@@ -2,6 +2,5 @@ pandas
 scikit-learn
 pyyaml
 joblib
-dvc
-joblib
-dvc[s3]
+dvc[gdrive]==3.63.0
+cml

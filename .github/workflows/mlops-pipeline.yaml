@@ -1,0 +1,46 @@
+name: mlops-pipeline
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    env:
+      repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CML utility
+        uses: iterative/setup-cml@v2
+
+      - name: Install dependencies (Python, DVC, CML)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pull data & models from DVC remote
+        run: |
+          dvc pull -v
+
+      - name: Run pipeline (prepare → train → evaluate)
+        run: |
+          dvc repro
+
+      - name: Generate and publish CML report
+        run: |
+          python3 scripts/generate_cml_report.py
+          cml comment create reports/cml_report.md
