@@ -1,4 +1,10 @@
 stages:
+  download:
+    cmd: python scripts/download_iris.py
+    deps:
+      - scripts/download_iris.py
+    outs:
+      - data/iris.csv
   prepare:
     cmd: python scripts/preprocess.py
     deps:

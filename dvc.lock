@@ -60,3 +60,15 @@ stages:
       hash: md5
       md5: 1c3effbf00d7ea9ba766fe952a75dccb
       size: 470
+  download:
+    cmd: python scripts/download_iris.py
+    deps:
+    - path: scripts/download_iris.py
+      hash: md5
+      md5: 5382362e46603f4088ad80a5889e3d05
+      size: 388
+    outs:
+    - path: data/iris.csv
+      hash: md5
+      md5: 4d301abed5efe50eccda350cde38e0eb
+      size: 2777
