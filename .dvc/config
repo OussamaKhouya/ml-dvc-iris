@@ -2,3 +2,5 @@
     remote = new_gdrive
 ['remote "new_gdrive"']
     url = gdrive://1qnTG-xYstcnUbljTv94pp2izEqLpBP-o
+    gdrive_use_service_account = false
+    gdrive_service_account_json_file_path = /home/oldhome/pc/enset/_S3/DevOps/dvc/gdrive_user_credentials.json
