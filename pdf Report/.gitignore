@@ -15,6 +15,7 @@
 *.xdv
 *.lof
 *.lot
+pdf ./*.tex
 
 # Editor clutter
 *.swp
