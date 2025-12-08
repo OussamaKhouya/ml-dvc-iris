@@ -7,5 +7,4 @@ venv
 .dvc/config.local
 gdrive_user_credentials.json
 config.local
-pdf Report/*.tex
 example.yaml

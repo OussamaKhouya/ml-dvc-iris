@@ -1,0 +1,219 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{grffile}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{teal},
+  frame=single,
+  breaklines=true
+}
+
+\title{TP2 -- Intégration MLOps complète\\
+\small (GitHub Actions, DVC, CML, Docker, Google Drive)}
+\author{Oussama Khouya \and Radwane Khemisse \and Achrafe Elalaoui}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+Projet \texttt{ml-dvc-iris} dérivé du TP2 (pipeline DVC : prepare $\rightarrow$ train $\rightarrow$ evaluate). Objectifs : automatiser la chaîne MLOps (DVC + GitHub Actions + CML), stocker les artefacts sur Google Drive, assurer la reproductibilité (\texttt{dvc repro}), préparer la containerisation et la promotion du meilleur modèle.
+
+\section{Architecture MLOps mise en place}
+\begin{itemize}
+  \item Pipeline DVC (\texttt{dvc.yaml}) avec trois stages (\autoref{lst:dvc}).
+  \item Données/artefacts suivis : \texttt{data/iris.csv}, \texttt{data/iris\_preprocessed.csv}, \texttt{models/random\_forest.pkl}, \texttt{metrics/*.json}.
+  \item Remote DVC Google Drive : \texttt{new\_gdrive} configuré via secrets GitHub.
+  \item CI/CD : workflow GitHub Actions \texttt{mlops-pipeline.yaml} (checkout, install deps, config remote, \texttt{dvc pull}, fallback dataset, \texttt{dvc repro}, rapport CML, commentaire PR).
+  \item Reporting : \texttt{scripts/generate\_cml\_report.py} et commentaire CML automatique.
+  \item Containerisation : Dockerfile à ajouter (build/run non réalisés).
+  \item Promotion modèle : stage \texttt{deploy} et \texttt{models/production\_model.pkl} à compléter.
+\end{itemize}
+
+\begin{lstlisting}[language=YAML,caption={Pipeline DVC},label={lst:dvc}]
+stages:
+  prepare:
+    cmd: python scripts/preprocess.py
+    deps:
+      - scripts/preprocess.py
+      - data/iris.csv
+    outs:
+      - data/iris_preprocessed.csv
+
+  train:
+    cmd: python src/train.py
+    deps:
+      - src/train.py
+      - data/iris_preprocessed.csv
+      - params.yaml
+    outs:
+      - models/random_forest.pkl
+      - metrics/train_metrics.json
+
+  evaluate:
+    cmd: python src/evaluate.py
+    deps:
+      - src/evaluate.py
+      - models/random_forest.pkl
+      - data/iris_preprocessed.csv
+    outs:
+      - metrics/eval_metrics.json
+\end{lstlisting}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.82\linewidth]{../snapshots/dvc repro.png}
+  \caption{Exécution locale du pipeline \texttt{dvc repro}}
+  \label{fig:dvc-repro}
+\end{figure}
+
+\section{CI GitHub Actions et CML}
+\subsection{Dépendances et rapport}
+\begin{itemize}
+  \item Dépendances ML/DVC/CML dans \texttt{requirements.txt} (\autoref{fig:req}).
+  \item Rapport Markdown généré par \texttt{scripts/generate\_cml\_report.py} (\autoref{fig:gen-cmd}, \autoref{fig:gen-report}).
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.7\linewidth]{../snapshots/requirements.png}
+  \caption{Dépendances Python}
+  \label{fig:req}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.6\linewidth]{../snapshots/generate-report-command.png}
+  \caption{Génération du rapport CML}
+  \label{fig:gen-cmd}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.78\linewidth]{../snapshots/generated-report.png}
+  \caption{Aperçu de \texttt{reports/cml\_report.md}}
+  \label{fig:gen-report}
+\end{figure}
+
+\subsection{Workflow GitHub Actions}
+\begin{itemize}
+  \item Triggers : \texttt{push}, \texttt{pull\_request}.
+  \item Étapes : checkout, Python 3.11, install deps (\texttt{dvc[gdrive]}, \texttt{cml}), config remote GDrive, \texttt{dvc pull}, fallback \texttt{scripts/download\_iris.py} si besoin, \texttt{dvc repro}, génération du rapport, \texttt{cml comment create}.
+  \item Succès du workflow (\autoref{fig:ci-ok}) et commentaire CML en PR (\autoref{fig:cml-comment}).
+\end{itemize}
+
+\begin{lstlisting}[language=YAML,caption={Extrait du workflow mlops-pipeline.yaml},label={lst:workflow}]
+on:
+  push:
+  pull_request:
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - uses: iterative/setup-cml@v2
+      - run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+          pip install "dvc[gdrive]==3.63.0"
+      - name: Configure DVC remote (OAuth)
+        run: |
+          echo '${{ secrets.GDRIVE_CREDENTIALS_JSON }}' > gdrive_user_credentials.json
+          dvc remote modify --local new_gdrive gdrive_user_credentials_file gdrive_user_credentials.json
+          dvc remote modify --local new_gdrive gdrive_client_id "${{ secrets.GDRIVE_CLIENT_ID }}"
+          dvc remote modify --local new_gdrive gdrive_client_secret "${{ secrets.GDRIVE_CLIENT_SECRET }}"
+      - run: dvc pull -v
+      - run: if [ ! -f data/iris.csv ]; then python scripts/download_iris.py; fi
+      - run: dvc repro
+      - run: |
+          python3 scripts/generate_cml_report.py
+          cml comment create reports/cml_report.md
+\end{lstlisting}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\linewidth]{../snapshots/successful-workflow.png}
+  \caption{Exécution réussie du workflow GitHub Actions}
+  \label{fig:ci-ok}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.75\linewidth]{../snapshots/cml-comment.png}
+  \caption{Commentaire CML généré dans la Pull Request}
+  \label{fig:cml-comment}
+\end{figure}
+
+\section{Remote DVC Google Drive}
+\begin{itemize}
+  \item Remote \texttt{new\_gdrive} pointant vers l'ID Drive, authentifié via secrets OAuth.
+  \item Synchronisation vérifiée : \texttt{dvc pull} (\autoref{fig:dvc-pull}) et \texttt{dvc push} (\autoref{fig:dvc-push}).
+\end{itemize}
+
+\begin{lstlisting}[language=ini,caption={Extrait .dvc/config},label={lst:dvc-config}]
+[core]
+    remote = new_gdrive
+
+[remote "new_gdrive"]
+    url = gdrive://1qnTG-xYstcnUbljTv94pp2izEqLpBP-o
+    gdrive_use_service_account = true
+    gdrive_service_account_json_file_path = /home/oldhome/pc/enset/_S3/DevOps/dvc/gdrive_user_credentials.json
+\end{lstlisting}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.78\linewidth]{../snapshots/dvc pull.png}
+  \caption{Récupération des artefacts par \texttt{dvc pull}}
+  \label{fig:dvc-pull}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.78\linewidth]{../snapshots/dvc push up to date.png}
+  \caption{\texttt{dvc push} indiquant un cache distant à jour}
+  \label{fig:dvc-push}
+\end{figure}
+
+\section{Containerisation Docker}
+\begin{itemize}
+  \item Attendu : Dockerfile (base \texttt{python:3.11-slim}, install deps, copie projet, \texttt{CMD ["dvc","repro"]}).
+  \item Statut : non réalisé, aucune capture de build/run dans \texttt{./snapshots}.
+  \item À faire : ajouter Dockerfile, exécuter \texttt{docker build/run}, produire la capture.
+\end{itemize}
+
+\section{Promotion du meilleur modèle}
+\begin{itemize}
+  \item Attendu : script \texttt{scripts/deploy.py} et stage \texttt{deploy} produisant \texttt{models/production\_model.pkl}.
+  \item Statut : non implémenté, fichier \texttt{models/production\_model.pkl} non généré.
+  \item À faire : comparer \texttt{metrics/eval\_metrics.json} à \texttt{metrics/best\_metrics.json}, copier \texttt{models/random\_forest.pkl} en cas de meilleure accuracy.
+\end{itemize}
+
+\section{Difficultés rencontrées et solutions}
+\begin{itemize}
+  \item Authentification GDrive : tokens corrompus/type invalide. Solution : reconfigurer \texttt{new\_gdrive} avec OAuth via secrets et valider \texttt{dvc pull/push}.
+  \item Build PyYAML en CI : échec de wheel. Solution : pinner \texttt{pyyaml==6.0.2} et installer \texttt{libyaml-dev}+\texttt{build-essential}.
+  \item Données brutes absentes : \texttt{iris.csv} manquante au début. Solution : \texttt{dvc add data/iris.csv} puis \texttt{dvc push}; fallback \texttt{scripts/download\_iris.py} dans la CI.
+  \item Plugin GDrive manquant en CI : erreur “dvc-gdrive”. Solution : installer explicitement \texttt{dvc[gdrive]==3.63.0} dans le workflow.
+  \item Reste à faire : Dockerfile/build-run, stage \texttt{deploy} et génération de \texttt{models/production\_model.pkl}.
+\end{itemize}
+
+\section{Conclusion}
+Chaîne MLOps quasi complète : pipeline DVC reproductible, remote Google Drive fonctionnel, workflow GitHub Actions + CML opérationnel avec rapport et commentaire PR. Travaux restants : containerisation Docker (build/run), ajout du stage \texttt{deploy} pour produire \texttt{models/production\_model.pkl} et finaliser la promotion du meilleur modèle.
+
+\end{document}
